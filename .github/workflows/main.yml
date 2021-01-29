@@ -1,0 +1,56 @@
+name: Dockcross CI
+
+on:
+  push:
+    branches:
+    - 'master'
+  pull_request:
+    branches:
+    - '*'
+
+jobs:
+  base:
+    name: base
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: build
+        run: make base
+      - name: test
+        run: make base.test
+      - name: archive base
+        run: |
+            mkdir -p cache
+            docker save -o ./cache/base.tar dockcross/base:latest
+      - name: save base
+        uses: actions/upload-artifact@v2
+        with:
+          name: cache
+          path: ./cache
+          retention-days: 1
+
+  image:
+    name: ${{ matrix.arch_name }}
+    needs: base
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        arch_name: [android-arm]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/download-artifact@v2
+        with:
+          name: cache
+          path: ./cache
+      - name: load base
+        run: docker load -i ./cache/base.tar
+      - name: build
+        run: make ${{ matrix.arch_name }}
+      - name: test
+        run: make ${{ matrix.arch_name }}.test
+      - name: deploy
+        if: github.ref != 'master'
+        run: |
+            echo "This is NOT master"
+            docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASSWORD }}
+            docker push jonasvautherin/${{ matrix.arch_name }}:latest
